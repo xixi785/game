@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Space Adventure</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #0a0a2e;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: white;
+            height: 100vh;
+            position: relative;
+        }
+        canvas {
+            border: 2px solid #00ffff;
+            box-shadow: 0 0 20px #00ffff;
+        }
+        #score {
+            font-size: 24px;
+            margin: 10px;
+            text-shadow: 0 0 10px #00ffff;
+        }
+        #countdown {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 120px;
+            text-shadow: 0 0 30px #00ffff;
+            display: none;
+            z-index: 1000;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.2); }
+            100% { transform: translate(-50%, -50%) scale(1); }
+        }
+        .button {
+            display: none;
+            margin-top: 20px;
+            padding: 10px 20px;
+            background: #00ffff;
+            border: none;
+            cursor: pointer;
+            font-size: 18px;
+            color: #0a0a2e;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        .button:hover {
+            background: #00cccc;
+            transform: scale(1.1);
+        }
+    </style>
+</head>
+<body>
+    <div id="score">Score: 0</div>
+    <div id="countdown">3</div>
+    <canvas id="gameCanvas"></canvas>
+    <button id="start" class="button">Start Game</button>
+    <button id="restart" class="button">Play Again</button>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const countdownElement = document.getElementById('countdown');
+        const startButton = document.getElementById('start');
+        const restartButton = document.getElementById('restart');
+
+        // 设置画布尺寸
+        canvas.width = 800;
+        canvas.height = 600;
+
+        // 游戏状态
+        let gameState = {
+            star: {
+                x: 100,
+                y: 300,
+                velocity: 0,
+                size: 30
+            },
+            walls: [],
+            score: 0,
+            lastClickTime: 0,
+            gameActive: false,
+            speed: 3,
+            countdown: 3
+        };
+
+        // 倒计时函数
+        function startCountdown() {
+            gameState.countdown = 3;
+            countdownElement.style.display = 'block';
+            countdownElement.textContent = gameState.countdown;
+            
+            const countdownInterval = setInterval(() => {
+                gameState.countdown--;
+                countdownElement.textContent = gameState.countdown;
+                
+                if (gameState.countdown <= 0) {
+                    clearInterval(countdownInterval);
+                    countdownElement.style.display = 'none';
+                    requestAnimationFrame(() => {
+                        startGame();
+                    });
+                }
+            }, 1000);
+        }
+
+        // 开始游戏
+        function startGame() {
+            gameState = {
+                star: {
+                    x: 100,
+                    y: 300,
+                    velocity: 0,
+                    size: 30
+                },
+                walls: [],
+                score: 0,
+                lastClickTime: 0,
+                gameActive: true,
+                speed: 3
+            };
+            scoreElement.textContent = 'Score: 0';
+            startButton.style.display = 'none';
+            restartButton.style.display = 'none';
+        }
+
+        // 生成随机墙壁
+        function createWall() {
+            const gapHeight = 150;  // 通道高度
+            const minHeight = 80;   // 最小墙体高度
+            const topHeight = minHeight + Math.random() * (canvas.height - gapHeight - minHeight * 2);
+            
+            return {
+                x: canvas.width,
+                topHeight: topHeight,
+                bottomY: topHeight + gapHeight,
+                passed: false
+            };
+        }
+
+        // 绘制五角星
+        function drawStar(x, y, size) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(Math.PI / 10);
+            ctx.fillStyle = '#FF0000';
+            
+            const points = 5;
+            const innerSize = size * 0.5;
+            
+            ctx.beginPath();
+            for(let i = 0; i < 2 * points; i++) {
+                const angle = (i * Math.PI) / points;
+                const radius = i % 2 === 0 ? size : innerSize;
+                ctx.lineTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // 游戏循环
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if(gameState.gameActive) {
+                // 星体运动
+                gameState.star.velocity += 0.4; // 重力
+                gameState.star.y += gameState.star.velocity;
+
+                // 生成新墙壁
+                if(gameState.walls.length === 0 || 
+                   gameState.walls[gameState.walls.length-1].x < canvas.width - 300) {
+                    gameState.walls.push(createWall());
+                }
+
+                // 更新墙壁位置
+                gameState.walls.forEach(wall => {
+                    wall.x -= gameState.speed;
+
+                    // 碰撞检测
+                    if (
+                        gameState.star.x + gameState.star.size > wall.x &&
+                        gameState.star.x - gameState.star.size < wall.x + 40 &&
+                        (gameState.star.y - gameState.star.size < wall.topHeight ||
+                         gameState.star.y + gameState.star.size > wall.bottomY)
+                    ) {
+                        gameOver();
+                    }
+
+                    // 计分
+                    if(!wall.passed && wall.x + 40 < gameState.star.x) {
+                        wall.passed = true;
+                        gameState.score++;
+                        scoreElement.textContent = `Score: ${gameState.score}`;
+                        
+                        // 每5分加速
+                        if(gameState.score % 5 === 0) {
+                            gameState.speed += 0.3;
+                        }
+                    }
+                });
+
+                // 移除屏幕外墙壁
+                gameState.walls = gameState.walls.filter(wall => wall.x > -40);
+
+                // 绘制墙壁
+                gameState.walls.forEach(wall => {
+                    ctx.fillStyle = '#00ff00';
+                    ctx.fillRect(wall.x, 0, 40, wall.topHeight);
+                    ctx.fillRect(wall.x, wall.bottomY, 40, canvas.height - wall.bottomY);
+                });
+
+                // 边界检测
+                if(gameState.star.y < 0 || gameState.star.y > canvas.height) {
+                    gameOver();
+                }
+
+                // 通关检测
+                if(gameState.score >= 60) {
+                    victory();
+                    return;
+                }
+            }
+
+            // 绘制星体
+            drawStar(gameState.star.x, gameState.star.y, gameState.star.size);
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function gameOver() {
+            gameState.gameActive = false;
+            restartButton.style.display = 'block';
+            alert('Game Over!');
+        }
+
+        function victory() {
+            gameState.gameActive = false;
+            restartButton.style.display = 'block';
+            alert('Congratulations! You have completed the game!');
+        }
+
+        // 点击事件
+        canvas.addEventListener('mousedown', (e) => {
+            if(!gameState.gameActive) return;
+
+            const now = Date.now();
+            const clickInterval = now - gameState.lastClickTime;
+            
+            // 点击越快升力越大（最大限制）
+            let boost = Math.min(1000/(clickInterval || 1), 20);
+            gameState.star.velocity = -boost;
+            
+            gameState.lastClickTime = now;
+        });
+
+        // 开始按钮事件
+        startButton.addEventListener('click', () => {
+            startButton.style.display = 'none';
+            startCountdown();
+        });
+
+        // 重新开始按钮事件
+        restartButton.addEventListener('click', () => {
+            restartButton.style.display = 'none';
+            startCountdown();
+        });
+
+        // 启动游戏
+        startButton.style.display = 'block';
+        gameLoop();
+    </script>
+</body>
+</html> 
